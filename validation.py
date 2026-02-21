@@ -1,7 +1,7 @@
 # validation.py
 import numpy as np
 import pandas as pd
-from sklearn.metrics import precision_recall_curve, confusion_matrix
+from sklearn.metrics import confusion_matrix
 from config import *
 
 class Validator:
@@ -19,21 +19,17 @@ class Validator:
 
     def find_best_threshold(self, y_true, y_scores):
         """Find threshold that meets recall >= target and fpr <= target."""
-        precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
-        # thresholds from precision_recall_curve are for decision function; we need to align.
-        # We'll iterate over thresholds and compute FPR for each.
+        # Sort thresholds from low to high
+        thresholds = np.sort(np.unique(y_scores))
         best_thresh = None
         best_metrics = None
         for thresh in thresholds:
-            if thresh > 1:  # avoid extreme thresholds
-                continue
             y_pred = (y_scores >= thresh).astype(int)
             tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
             recall_i = tp / (tp + fn) if (tp+fn) > 0 else 0
             fpr_i = fp / (fp + tn) if (fp+tn) > 0 else 0
             if recall_i >= self.target_recall and fpr_i <= self.target_fpr:
                 # Found a valid threshold; we can choose the highest threshold for best precision
-                # For simplicity, we take the first one (lowest threshold) to maximize recall.
                 best_thresh = thresh
                 precision_i = tp / (tp + fp) if (tp+fp) > 0 else 0
                 best_metrics = (precision_i, recall_i, fpr_i)

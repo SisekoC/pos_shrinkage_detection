@@ -1,35 +1,73 @@
 # data_loader.py
 import pandas as pd
-import os
 from config import *
 
 class DataLoader:
     @staticmethod
     def load_store_master():
-        return pd.read_csv(STORE_MASTER)
+        try:
+            df = pd.read_csv(STORE_MASTER)
+            print(f"Loaded store_master: {df.shape}")
+            return df
+        except Exception as e:
+            print(f"Error loading store_master: {e}")
+            raise
 
     @staticmethod
     def load_employee_master():
-        return pd.read_csv(EMPLOYEE_MASTER)
+        try:
+            df = pd.read_csv(EMPLOYEE_MASTER)
+            print(f"Loaded employee_master: {df.shape}")
+            return df
+        except Exception as e:
+            print(f"Error loading employee_master: {e}")
+            raise
 
     @staticmethod
     def load_transactions():
-        # Ensure datetime parsing
-        df = pd.read_csv(TRANSACTIONS, parse_dates=['transaction_datetime'])
-        return df
+        try:
+            df = pd.read_csv(TRANSACTIONS)
+            print(f"Loaded transactions: {df.shape}")
+            # Convert datetime column if it exists
+            if COL_TRANSACTION_DATETIME in df.columns:
+                df[COL_TRANSACTION_DATETIME] = pd.to_datetime(df[COL_TRANSACTION_DATETIME])
+            else:
+                print(f"Warning: Column '{COL_TRANSACTION_DATETIME}' not found in transactions.csv")
+                print("Available columns:", list(df.columns))
+            return df
+        except Exception as e:
+            print(f"Error loading transactions: {e}")
+            raise
 
     @staticmethod
     def load_features_employee():
-        return pd.read_csv(FEATURES_EMPLOYEE_MONTHLY)
+        try:
+            df = pd.read_csv(FEATURES_EMPLOYEE_MONTHLY)
+            print(f"Loaded features_employee_monthly: {df.shape}")
+            return df
+        except Exception as e:
+            print(f"Error loading features_employee: {e}")
+            raise
 
     @staticmethod
     def load_features_pos():
-        return pd.read_csv(FEATURES_POS_MONTHLY)
+        try:
+            df = pd.read_csv(FEATURES_POS_MONTHLY)
+            print(f"Loaded features_pos_monthly: {df.shape}")
+            return df
+        except Exception as e:
+            print(f"Error loading features_pos: {e}")
+            raise
 
     @staticmethod
     def load_anomaly_employees():
-        # Expected columns: employee_id, ground_truth (1 if fraud actor)
-        return pd.read_csv(ANOMALY_EMPLOYEES)
+        try:
+            df = pd.read_csv(ANOMALY_EMPLOYEES)
+            print(f"Loaded anomaly_employees: {df.shape}")
+            return df
+        except Exception as e:
+            print(f"Error loading anomaly_employees (optional): {e}")
+            return None  # Allow missing ground truth
 
     @staticmethod
     def load_all():

@@ -19,23 +19,23 @@ class BehavioralCluster:
         self.model = KMeans(n_clusters=self.n_clusters, random_state=42)
         labels = self.model.fit_predict(X_scaled)
         
-        # Compute cluster risk based on centroid values (higher refund/void = higher risk)
+        # Compute cluster risk based on centroid values
         centers = self.scaler.inverse_transform(self.model.cluster_centers_)
-        # Assume feature_columns order matches; compute a simple risk score for each cluster
-        # For demonstration, we'll use the mean of the first three features (refund, void, override)
         cluster_risk = {}
         for i, center in enumerate(centers):
-            # Normalize each feature to 0-1 based on overall max/min? Or just use rank.
-            # Simple: risk = average of normalized refund, void, override rates
-            # We'll assume feature_columns[0] = refund_rate, [1] = void_rate, [2] = override_rate
-            risk = np.mean(center[:3])  # crude, but works for demo
+            # Use first three features as proxies for risk (refund, void, override)
+            risk = np.mean(center[:3]) if len(center) >= 3 else 0.5
             cluster_risk[i] = risk
         
         features_df['cluster'] = labels
         features_df['cluster_risk'] = features_df['cluster'].map(cluster_risk)
         # Normalize cluster_risk to 0-1
-        features_df['cluster_risk'] = (features_df['cluster_risk'] - features_df['cluster_risk'].min()) / \
-                                       (features_df['cluster_risk'].max() - features_df['cluster_risk'].min() + 1e-6)
+        min_r = features_df['cluster_risk'].min()
+        max_r = features_df['cluster_risk'].max()
+        if max_r > min_r:
+            features_df['cluster_risk'] = (features_df['cluster_risk'] - min_r) / (max_r - min_r)
+        else:
+            features_df['cluster_risk'] = 0.5
         return features_df
 
 
@@ -47,28 +47,25 @@ class PatternDetector:
 
     def detect_high_discount_cash(self, discount_threshold=0.3):
         """Count high discount + cash transactions per employee."""
-        self.transactions['discount_pct'] = self.transactions['discount_amount'] / self.transactions['sale_amount'].clip(1)
-        mask = (self.transactions['discount_pct'] > discount_threshold) & (self.transactions['payment_method'] == 'cash')
-        return self.transactions[mask].groupby('employee_id').size()
+        if COL_DISCOUNT_AMOUNT not in self.transactions.columns or COL_SALE_AMOUNT not in self.transactions.columns:
+            return pd.Series(dtype=int)
+        self.transactions['discount_pct'] = self.transactions[COL_DISCOUNT_AMOUNT] / self.transactions[COL_SALE_AMOUNT].clip(1)
+        if COL_PAYMENT_METHOD not in self.transactions.columns:
+            return pd.Series(dtype=int)
+        mask = (self.transactions['discount_pct'] > discount_threshold) & (self.transactions[COL_PAYMENT_METHOD] == 'cash')
+        return self.transactions[mask].groupby(COL_EMPLOYEE_ID).size()
 
     def detect_refund_no_receipt(self):
         """Count refunds without receipt per employee."""
-        mask = (self.transactions['refund_flag'] == 1) & (self.transactions['receipt_provided'] == 0)
-        return self.transactions[mask].groupby('employee_id').size()
-
-    def detect_sale_void_resale(self, window_hours=1):
-        """
-        Detect sale -> void -> resale sequences within short time by same employee.
-        Simplified: count voids that are followed by a cash sale of similar amount within window.
-        """
-        # This is complex; for demo, we return empty series.
-        return pd.Series(dtype=int)
+        if COL_REFUND_FLAG not in self.transactions.columns or COL_RECEIPT_PROVIDED not in self.transactions.columns:
+            return pd.Series(dtype=int)
+        mask = (self.transactions[COL_REFUND_FLAG] == 1) & (self.transactions[COL_RECEIPT_PROVIDED] == 0)
+        return self.transactions[mask].groupby(COL_EMPLOYEE_ID).size()
 
     def get_pattern_counts(self):
         """Return a DataFrame with pattern counts per employee."""
         hd = self.detect_high_discount_cash()
         nr = self.detect_refund_no_receipt()
-        # Combine
         patterns = pd.DataFrame({'high_discount_cash': hd, 'refund_no_receipt': nr}).fillna(0)
         patterns['total_patterns'] = patterns.sum(axis=1)
         return patterns
@@ -88,15 +85,15 @@ class CompositeRiskScorer:
         Returns DataFrame with risk_score, flags, reason codes.
         """
         # Normalize anomaly components (z-scores clipped to 0-3 then scaled to 0-1)
-        refund_anomaly = np.clip(features_df['refund_rate_zscore'].abs(), 0, 3) / 3
-        void_anomaly = np.clip(features_df['void_rate_zscore'].abs(), 0, 3) / 3
-        override_anomaly = np.clip(features_df['override_rate_zscore'].abs(), 0, 3) / 3
+        refund_anomaly = np.clip(features_df.get('refund_rate_zscore', 0).abs(), 0, 3) / 3
+        void_anomaly = np.clip(features_df.get('void_rate_zscore', 0).abs(), 0, 3) / 3
+        override_anomaly = np.clip(features_df.get('override_rate_zscore', 0).abs(), 0, 3) / 3
         
-        # Cluster risk already 0-1
-        cluster_risk = features_df['cluster_risk'].fillna(0)
+        # Cluster risk
+        cluster_risk = features_df.get('cluster_risk', 0).fillna(0)
         
-        # Time anomaly (placeholder)
-        time_anomaly = features_df['time_anomaly'] if 'time_anomaly' in features_df else 0
+        # Time anomaly
+        time_anomaly = features_df.get('time_anomaly', 0)
         
         # Weighted sum
         raw_score = (self.weights['refund_anomaly'] * refund_anomaly +
@@ -105,10 +102,9 @@ class CompositeRiskScorer:
                      self.weights['cluster_risk'] * cluster_risk +
                      self.weights['time_anomaly'] * time_anomaly)
         
-        # Scale to 0-100
         risk_score = raw_score * 100
         
-        # Reason codes: top contributing factor
+        # Reason codes
         contributions = pd.DataFrame({
             'refund': refund_anomaly * self.weights['refund_anomaly'] * 100,
             'void': void_anomaly * self.weights['void_anomaly'] * 100,
@@ -125,17 +121,17 @@ class CompositeRiskScorer:
                            right=False)
         
         # Build output
-        output = features_df[['employee_id', 'store_id']].copy()
+        output = features_df[[COL_EMPLOYEE_ID, COL_STORE_ID]].copy()
         output['risk_score'] = risk_score
         output['refund_rate'] = features_df.get('refund_rate', 0)
         output['void_rate'] = features_df.get('void_rate', 0)
         output['override_rate'] = features_df.get('override_rate', 0)
-        output['peer_percentile'] = features_df.get('refund_rate_percentile', 0) * 100  # example
+        output['peer_percentile'] = features_df.get('refund_rate_percentile', 0) * 100
         output['risk_flag'] = risk_flag
         output['reason_code'] = reason_code
         
         # Merge pattern counts
-        output = output.merge(pattern_counts, left_on='employee_id', right_index=True, how='left').fillna(0)
+        output = output.merge(pattern_counts, left_on=COL_EMPLOYEE_ID, right_index=True, how='left').fillna(0)
         return output
 
     def score_terminals(self, features_pos, employee_risk):
@@ -143,26 +139,24 @@ class CompositeRiskScorer:
         features_pos: POS monthly features
         employee_risk: result from score_employees (contains employee risk scores)
         """
-        # Need to link employees to terminals via transactions or a mapping.
-        # For simplicity, we'll assume features_pos already contains high_risk_employee_ratio
-        # If not, we need to compute it. We'll compute if missing.
+        # Ensure required columns exist
         if 'high_risk_employee_ratio' not in features_pos.columns:
-            # Placeholder: set to 0
             features_pos['high_risk_employee_ratio'] = 0.0
         
-        # Compute risk score for terminals
+        # Compute terminal risk score
         features_pos['risk_score'] = (
             features_pos.get('refund_rate', 0) * 20 +
             features_pos.get('void_rate', 0) * 20 +
             features_pos.get('override_rate', 0) * 20 +
             features_pos['high_risk_employee_ratio'] * 40
-        ) * 100  # scale to 0-100
+        ) * 100
         
         features_pos['risk_flag'] = pd.cut(features_pos['risk_score'],
                                            bins=[0, 70, 85, 100],
                                            labels=['Monitor', 'Moderate', 'High'],
                                            right=False)
-        # Ensure required columns
-        cols = ['pos_terminal_id', 'store_id', 'risk_score', 'refund_rate', 'void_rate', 
+        # Select output columns
+        cols = [COL_POS_TERMINAL_ID, COL_STORE_ID, 'risk_score', 'refund_rate', 'void_rate', 
                 'high_risk_employee_ratio', 'risk_flag']
-        return features_pos[[c for c in cols if c in features_pos.columns]]
+        cols = [c for c in cols if c in features_pos.columns]
+        return features_pos[cols]
