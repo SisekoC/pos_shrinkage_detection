@@ -69,21 +69,9 @@ class FeatureProcessor:
         return self.features_employee
 
     def add_time_anomaly(self):
-        """
-        Compute time-of-day anomaly score per employee.
-        This requires transaction-level data with datetime column.
-        """
-        if COL_TRANSACTION_DATETIME in self.transactions.columns and COL_EMPLOYEE_ID in self.transactions.columns:
-            # Example: flag transactions after 10pm
-            self.transactions['hour'] = self.transactions[COL_TRANSACTION_DATETIME].dt.hour
-            late_night = self.transactions[self.transactions['hour'] >= 22].groupby(COL_EMPLOYEE_ID).size()
-            self.features_employee = self.features_employee.merge(
-                late_night.rename('late_night_count'), on=COL_EMPLOYEE_ID, how='left'
-            ).fillna(0)
-            # Normalize to 0-1 (e.g., proportion of transactions)
-            # We'll need total transactions per employee from features or compute
-            # For simplicity, set a placeholder
-            self.features_employee['time_anomaly'] = 0.0
+        if 'late_night_txn_pct' in self.features_employee.columns:
+            # Use percentile rank as time anomaly score
+            self.features_employee['time_anomaly'] = self.features_employee.groupby('store_id')['late_night_txn_pct'].rank(pct=True)
         else:
             self.features_employee['time_anomaly'] = 0.0
         return self.features_employee

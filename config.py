@@ -1,4 +1,4 @@
-new_config = 'config.py'
+# config.py
 import os
 
 DRIVE_PATH = '/content/drive/MyDrive/'
@@ -49,7 +49,3 @@ RISK_THRESHOLDS = {
 # Validation targets
 TARGET_RECALL = 0.75
 TARGET_FPR = 0.10
-
-with open('config.py', 'w') as f:
-    f.write(new_config)
-print("config.py updated.")

@@ -42,8 +42,8 @@ class BehavioralCluster:
 class PatternDetector:
     """Layer 3: Detect specific repeat patterns from transaction data."""
     
-    def __init__(self, transactions):
-        self.transactions = transactions
+    def __init__(self, features_employee):
+        self.features = features_employee
 
     def detect_high_discount_cash(self, discount_threshold=0.3):
         """Count high discount + cash transactions per employee."""
@@ -63,13 +63,10 @@ class PatternDetector:
         return self.transactions[mask].groupby(COL_EMPLOYEE_ID).size()
 
     def get_pattern_counts(self):
-        """Return a DataFrame with pattern counts per employee."""
-        hd = self.detect_high_discount_cash()
-        nr = self.detect_refund_no_receipt()
-        patterns = pd.DataFrame({'high_discount_cash': hd, 'refund_no_receipt': nr}).fillna(0)
-        patterns['total_patterns'] = patterns.sum(axis=1)
-        return patterns
-
+        # Assume features contains columns: high_discount_cash_count, refund_no_receipt_count
+        # Use the most recent month for each employee
+        latest = self.features.sort_values(['employee_id', 'year_month']).groupby('employee_id').last()
+        return latest[['high_discount_cash_count', 'refund_no_receipt_count']].fillna(0)
 
 class CompositeRiskScorer:
     """Layer 4: Combine all signals into a single risk score."""
