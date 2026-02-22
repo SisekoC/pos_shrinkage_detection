@@ -74,7 +74,7 @@ class DataLoader:
         return {
             'store_master': DataLoader.load_store_master(),
             'employee_master': DataLoader.load_employee_master(),
-            'transactions': DataLoader.load_transactions(),
+            # 'transactions': DataLoader.load_transactions(),  # COMMENTED OUT
             'features_employee': DataLoader.load_features_employee(),
             'features_pos': DataLoader.load_features_pos(),
             'anomaly_employees': DataLoader.load_anomaly_employees()
