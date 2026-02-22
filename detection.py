@@ -101,7 +101,7 @@ class CompositeRiskScorer:
         
         risk_score = raw_score * 100
         
-        # Reason codes
+        # Reason codes: top contributing factor
         contributions = pd.DataFrame({
             'refund': refund_anomaly * self.weights['refund_anomaly'] * 100,
             'void': void_anomaly * self.weights['void_anomaly'] * 100,
@@ -126,6 +126,11 @@ class CompositeRiskScorer:
         output['peer_percentile'] = features_df.get('refund_rate_percentile', 0) * 100
         output['risk_flag'] = risk_flag
         output['reason_code'] = reason_code
+    
+        # Convert any categorical columns to object to avoid fillna issues
+        cat_cols = output.select_dtypes(include=['category']).columns
+        if len(cat_cols) > 0:
+            output[cat_cols] = output[cat_cols].astype(object)
         
         # Merge pattern counts
         output = output.merge(pattern_counts, left_on=COL_EMPLOYEE_ID, right_index=True, how='left').fillna(0)
